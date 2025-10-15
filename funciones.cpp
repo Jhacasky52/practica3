@@ -2,165 +2,99 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-void charToBin(unsigned char c, char *bin) {
-    for (int i = 7; i >= 0; i--) {
-        bin[7 - i] = (c & (1 << i)) ? '1' : '0';
-    }
-    bin[8] = '\0';
+// Función para convertir un char a una cadena binaria de 8 bits
+std::string charToBinary(unsigned char c) {
+    return std::bitset<8>(c).to_string();
 }
 
-void invertirBits(char *bits, int n) {
-    for (int i = 0; i < n; i++) {
-        bits[i] = (bits[i] == '0') ? '1' : '0';
+// Función para dividir una cadena binaria en bloques de n bits
+std::vector<std::string> dividirEnBloques(const std::string& binarios, int n) {
+    std::vector<std::string> bloques;
+    for (size_t i = 0; i < binarios.size(); i += n) {
+        std::string bloque = binarios.substr(i, n);
+        if (bloque.size() < n) {
+            bloque.append(n - bloque.size(), '0'); // rellenar con ceros
+        }
+        bloques.push_back(bloque);
     }
+    return bloques;
 }
 
-void invertirCada2(char *bits, int n) {
-    for (int i = 0; i < n; i += 2) {
-        if (i + 1 < n) {
-            char t1 = bits[i], t2 = bits[i + 1];
-            bits[i] = (t1 == '0') ? '1' : '0';
-            bits[i + 1] = (t2 == '0') ? '1' : '0';
+std::vector<std::string> codificarArchivo(const std::string& rutaArchivo, int n){
+    std::ifstream archivo(rutaArchivo);
+    if (!archivo) {
+        std::cerr << "No se pudo abrir el archivo: " << rutaArchivo << std::endl;
+        return {};
+    }
+
+    std::string binarioTotal;
+    char c;
+    while (archivo.get(c)) {
+        binarioTotal += charToBinary(static_cast<unsigned char>(c));
+    }
+
+    archivo.close();
+
+    return dividirEnBloques(binarioTotal, n);
+}
+// Cuenta cuántas veces aparece un carácter en una cadena
+int contarCaracter(const std::string& s, char c) {
+    return std::count(s.begin(), s.end(), c);
+}
+
+// Invierte cada bit ('1' -> '0', '0' -> '1')
+std::string invertirBits(const std::string& bloque) {
+    std::string resultado = bloque;
+    for (char& bit : resultado) {
+        bit = (bit == '1') ? '0' : '1';
+    }
+    return resultado;
+}
+
+// Invierte cada grupo de n bits
+std::string invertirBitEspecificoEnCadaGrupo(const std::string& bloque, int n, int posBit) {
+    std::string resultado = bloque;
+
+    for (size_t i = 0; i < bloque.size(); i += n) {
+        size_t index = i + posBit-1;
+        if (index < bloque.size()) {
+            resultado[index] = (bloque[index] == '1') ? '0' : '1';
         }
     }
+
+    return resultado;
 }
 
-void invertirCada3(char *bits, int n) {
-    for (int i = 0; i < n; i += 3) {
-        for (int j = 0; j < 3 && (i + j) < n; j++) {
-            bits[i + j] = (bits[i + j] == '0') ? '1' : '0';
-        }
-    }
-}
+// Aplica la codificación a los bloques según las reglas
+std::vector<std::string> transformarBloques(const std::vector<std::string>& bloquesOriginales) {
+    std::vector<std::string> bloquesCodificados;
 
-void shiftCircularDerecha(char *bits, int n) {
-    char ultimo = bits[n - 1];
-    for (int i = n - 1; i > 0; i--) {
-        bits[i] = bits[i - 1];
-    }
-    bits[0] = ultimo;
-}
+    if (bloquesOriginales.empty()) return bloquesCodificados;
 
-// Convierte cadena de '0'/'1' en bytes reales
-void escribirBinario(FILE *salida, const char *bits) {
-    int len = strlen(bits);
-    for (int i = 0; i < len; i += 8) {
-        unsigned char byte = 0;
-        for (int j = 0; j < 8 && (i + j) < len; j++) {
-            byte = (byte << 1) | (bits[i + j] - '0');
-        }
-        fwrite(&byte, 1, 1, salida);
-    }
-}
+    // Primer bloque: invertir todos los bits
+    bloquesCodificados.push_back(invertirBits(bloquesOriginales[0]));
 
-// ====== MÉTODO 1 ======
+    // Procesar los siguientes bloques
+    for (size_t i = 1; i < bloquesOriginales.size(); ++i) {
+        const std::string& bloqueAnterior = bloquesOriginales[i - 1]; // sin codificar
+        const std::string& bloqueActual  = bloquesOriginales[i];     // sin codificar
 
-void metodo1(const char *entrada, const char *salida, int n) {
-    FILE *fin = fopen(entrada, "r");
-    FILE *fout = fopen(salida, "wb");
-    if (!fin || !fout) {
-        printf("Error abriendo archivos.\n");
-        return;
-    }
+        int unos = contarCaracter(bloqueAnterior, '1');
+        int ceros = contarCaracter(bloqueAnterior, '0');
 
-    // Convertir todo el archivo a binario ASCII
-    char *binario = malloc(8 * 1000000); // soporte hasta ~1MB texto
-    binario[0] = '\0';
-    char aux[9];
-    int totalBits = 0;
-    unsigned char c;
+        std::string bloqueTransformado;
 
-    while (fread(&c, 1, 1, fin)) {
-        charToBin(c, aux);
-        strcat(binario, aux);
-        totalBits += 8;
-    }
-
-    int bloques = (totalBits + n - 1) / n;
-    char codificado[totalBits + 1];
-    codificado[0] = '\0';
-
-    // Aplicar reglas
-    for (int b = 0; b < bloques; b++) {
-        char bloque[n + 1];
-        strncpy(bloque, binario + b * n, n);
-        bloque[n] = '\0';
-
-        if (strlen(bloque) == 0) break;
-
-        if (b == 0) {
-            invertirBits(bloque, strlen(bloque));
+        if (unos == ceros) {
+            bloqueTransformado = invertirBits(bloqueActual);
+        } else if (ceros > unos) {
+            bloqueTransformado = invertirBitEspecificoEnCadaGrupo(bloqueActual,2, 2);
         } else {
-            // analizar bloque anterior sin codificar
-            char anterior[n + 1];
-            strncpy(anterior, binario + (b - 1) * n, n);
-            anterior[n] = '\0';
-
-            int unos = 0, ceros = 0;
-            for (int i = 0; i < strlen(anterior); i++) {
-                if (anterior[i] == '1') unos++; else ceros++;
-            }
-
-            if (unos == ceros)
-                invertirBits(bloque, strlen(bloque));
-            else if (ceros > unos)
-                invertirCada2(bloque, strlen(bloque));
-            else
-                invertirCada3(bloque, strlen(bloque));
+            bloqueTransformado = invertirBitEspecificoEnCadaGrupo(bloqueActual,3, 3);
         }
-        strcat(codificado, bloque);
+
+        bloquesCodificados.push_back(bloqueTransformado);
     }
 
-    escribirBinario(fout, codificado);
-
-    fclose(fin);
-    fclose(fout);
-    free(binario);
-
-    printf("Archivo codificado con método 1 guardado en %s\n", salida);
+    return bloquesCodificados;
 }
 
-// ====== MÉTODO 2 ======
-
-void metodo2(const char *entrada, const char *salida, int n) {
-    FILE *fin = fopen(entrada, "r");
-    FILE *fout = fopen(salida, "wb");
-    if (!fin || !fout) {
-        printf("Error abriendo archivos.\n");
-        return;
-    }
-
-    // Convertir a binario
-    char *binario = malloc(8 * 1000000);
-    binario[0] = '\0';
-    char aux[9];
-    int totalBits = 0;
-    unsigned char c;
-
-    while (fread(&c, 1, 1, fin)) {
-        charToBin(c, aux);
-        strcat(binario, aux);
-        totalBits += 8;
-    }
-
-    int bloques = (totalBits + n - 1) / n;
-    char codificado[totalBits + 1];
-    codificado[0] = '\0';
-
-    for (int b = 0; b < bloques; b++) {
-        char bloque[n + 1];
-        strncpy(bloque, binario + b * n, n);
-        bloque[n] = '\0';
-        if (strlen(bloque) == 0) break;
-        shiftCircularDerecha(bloque, strlen(bloque));
-        strcat(codificado, bloque);
-    }
-
-    escribirBinario(fout, codificado);
-
-    fclose(fin);
-    fclose(fout);
-    free(binario);
-
-    printf("Archivo codificado con método 2 guardado en %s\n", salida);
-}
